@@ -8,17 +8,21 @@ import (
 )
 
 func main() {
-	// Create a new database
-	fmt.Println("Creating database...")
-	db, err := nosqlite.Create("example.ndb")
+	// Connect to database (MongoDB-compatible API)
+	fmt.Println("Connecting to database...")
+	client, err := keradb.Connect("example.ndb")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer client.Close()
+
+	// Get database and collection
+	db := client.Database()
+	users := db.Collection("users")
 
 	// Insert documents
 	fmt.Println("\n--- Inserting documents ---")
-	id1, err := db.Insert("users", map[string]interface{}{
+	result1, err := users.InsertOne(keradb.M{
 		"name":  "Alice",
 		"age":   30,
 		"email": "alice@example.com",
@@ -26,9 +30,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Inserted Alice with ID: %s\n", id1)
+	fmt.Printf("Inserted Alice with ID: %s\n", result1.InsertedID)
 
-	id2, err := db.Insert("users", map[string]interface{}{
+	result2, err := users.InsertOne(keradb.M{
 		"name":  "Bob",
 		"age":   25,
 		"email": "bob@example.com",
@@ -36,11 +40,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Inserted Bob with ID: %s\n", id2)
+	fmt.Printf("Inserted Bob with ID: %s\n", result2.InsertedID)
 
 	// Find by ID
 	fmt.Println("\n--- Finding by ID ---")
-	alice, err := db.FindByID("users", id1)
+	var alice keradb.Document
+	err = users.FindOne(keradb.M{"_id": result1.InsertedID}).Decode(&alice)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,19 +53,19 @@ func main() {
 
 	// Update
 	fmt.Println("\n--- Updating ---")
-	updated, err := db.Update("users", id1, map[string]interface{}{
-		"name":  "Alice",
-		"age":   31,
-		"email": "alice@example.com",
-	})
+	updateResult, err := users.UpdateOne(
+		keradb.M{"_id": result1.InsertedID},
+		keradb.M{"$set": keradb.M{"age": 31}},
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Updated Alice: %v\n", updated)
+	fmt.Printf("Updated %d document(s)\n", updateResult.ModifiedCount)
 
 	// Find all
 	fmt.Println("\n--- Finding all ---")
-	allUsers, err := db.FindAll("users", nil)
+	cursor := users.Find(keradb.M{})
+	allUsers, err := cursor.All()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,37 +73,31 @@ func main() {
 
 	// Count
 	fmt.Println("\n--- Counting ---")
-	count := db.Count("users")
+	count, err := users.CountDocuments(keradb.M{})
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("Total users: %d\n", count)
 
 	// List collections
 	fmt.Println("\n--- Listing collections ---")
-	collections, err := db.ListCollections()
+	collections, err := db.ListCollectionNames()
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, col := range collections {
-		fmt.Printf("Collection: %s, Documents: %d\n", col.Name, col.Count)
+	for _, name := range collections {
+		fmt.Printf("Collection: %s\n", name)
 	}
 
 	// Pagination
 	fmt.Println("\n--- Pagination ---")
-	limit := 1
-	skip := 0
-	page1, err := db.FindAll("users", &nosqlite.FindAllOptions{
-		Limit: &limit,
-		Skip:  &skip,
-	})
+	page1, err := users.Find(keradb.M{}).Limit(1).Skip(0).All()
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Page 1: %v\n", page1)
 
-	skip = 1
-	page2, err := db.FindAll("users", &nosqlite.FindAllOptions{
-		Limit: &limit,
-		Skip:  &skip,
-	})
+	page2, err := users.Find(keradb.M{}).Limit(1).Skip(1).All()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -106,15 +105,17 @@ func main() {
 
 	// Delete
 	fmt.Println("\n--- Deleting ---")
-	if err := db.Delete("users", id2); err != nil {
+	deleteResult, err := users.DeleteOne(keradb.M{"_id": result2.InsertedID})
+	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Deleted Bob")
+	fmt.Printf("Deleted %d document(s)\n", deleteResult.DeletedCount)
 
-	fmt.Printf("Remaining users: %d\n", db.Count("users"))
+	remaining, _ := users.CountDocuments(keradb.M{})
+	fmt.Printf("Remaining users: %d\n", remaining)
 
 	// Sync
-	if err := db.Sync(); err != nil {
+	if err := client.Sync(); err != nil {
 		log.Fatal(err)
 	}
 
