@@ -5,7 +5,7 @@ Go SDK for keradb - a lightweight, embedded NoSQL document database.
 ## Installation
 
 ```bash
-go get github.com/yourusername/keradb
+go get github.com/KeraDB/golang-sdk
 ```
 
 For development from source:
@@ -49,7 +49,7 @@ import (
     "fmt"
     "log"
     
-    "github.com/yourusername/keradb"
+    "github.com/KeraDB/golang-sdk"
 )
 
 func main() {

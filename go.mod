@@ -1,3 +1,3 @@
-module github.com/yourusername/nosqlite
+module github.com/KeraDB/golang-sdk
 
 go 1.21

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/yourusername/nosqlite"
+	"github.com/KeraDB/golang-sdk"
 )
 
 func main() {
