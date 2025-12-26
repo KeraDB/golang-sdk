@@ -1,3 +1,3 @@
-module github.com/KeraDB/golang-sdk
+module github.com/keradb/golang-sdk
 
 go 1.21

@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	import "github.com/keradb/keradb-go"
+//	import "github.com/keradb/golang-sdk"
 //
 //	client, _ := keradb.Connect("mydb.ndb")
 //	defer client.Close()
