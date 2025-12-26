@@ -1,6 +1,6 @@
 # keradb Go SDK
 
-Go SDK for keradb - a lightweight, embedded NoSQL document database.
+Go SDK for keradb - a lightweight, embedded NoSQL document database with vector search capabilities.
 
 ## Installation
 
@@ -337,6 +337,230 @@ func (db *Database) Path() string
 ```
 
 Get the database path.
+
+## Vector Search
+
+KeraDB includes built-in vector search capabilities for semantic search, similarity matching, and AI applications.
+
+### Vector Search Features
+
+- **HNSW (Hierarchical Navigable Small World)** index for fast approximate nearest neighbor search
+- **Multiple distance metrics**: Cosine (default), Euclidean (L2), Dot Product, Manhattan (L1)
+- **LEANN-style delta compression** for 85-95% storage savings
+- **Metadata filtering** for hybrid search
+- **Lazy embedding mode** for reduced memory footprint
+- **Thread-safe** concurrent access
+
+### Basic Vector Search Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/keradb/golang-sdk"
+)
+
+func main() {
+    // Connect to database
+    client, err := keradb.Connect("mydb.ndb")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Close()
+
+    // Create a vector collection with 384 dimensions
+    config := keradb.NewVectorConfig(384).
+        WithDistance(keradb.Cosine).
+        WithDeltaCompression()
+
+    if err := client.CreateVectorCollection("embeddings", config); err != nil {
+        log.Fatal(err)
+    }
+
+    // Insert vectors with metadata
+    vector1 := keradb.Embedding{0.1, 0.2, 0.3, /* ... 384 dimensions */}
+    metadata1 := keradb.M{"category": "tech", "title": "AI Article"}
+
+    id, err := client.InsertVector("embeddings", vector1, metadata1)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Inserted vector with ID: %d\n", id)
+
+    // Search for similar vectors
+    queryVector := keradb.Embedding{0.11, 0.19, 0.31, /* ... */}
+    results, err := client.VectorSearch("embeddings", queryVector, 10)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    for _, result := range results {
+        fmt.Printf("Rank %d: ID=%d, Score=%.4f, Title=%v\n",
+            result.Rank, result.Document.ID, result.Score,
+            result.Document.Metadata["title"])
+    }
+
+    // Get collection statistics
+    stats, err := client.VectorStats("embeddings")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Collection has %d vectors, %d dimensions\n",
+        stats.VectorCount, stats.Dimensions)
+}
+```
+
+### Vector Configuration Options
+
+```go
+// Basic configuration
+config := keradb.NewVectorConfig(768)
+
+// With custom distance metric
+config.WithDistance(keradb.Euclidean)
+
+// HNSW parameters for quality/performance trade-offs
+config.WithM(16)              // More connections = better recall, more memory
+config.WithEfConstruction(200) // Higher = better index quality, slower build
+config.WithEfSearch(50)        // Higher = better recall, slower search
+
+// Enable delta compression (85-95% storage savings)
+config.WithDeltaCompression()
+
+// Or quantized compression for maximum savings
+config.WithQuantizedCompression()
+
+// Lazy embedding mode (store text, compute on-demand)
+config.WithLazyEmbedding("text-embedding-ada-002")
+```
+
+### Text-Based Vector Search
+
+```go
+// Insert text (requires embedding provider setup)
+id, err := client.InsertText("embeddings", "Machine learning tutorial",
+    keradb.M{"category": "education"})
+
+// Search by text query
+results, err := client.VectorSearchText("embeddings", "AI tutorials", 5)
+```
+
+### Filtered Vector Search
+
+```go
+// Search with metadata filter
+filter := keradb.MetadataFilter{
+    Field:     "category",
+    Condition: "eq",
+    Value:     "tech",
+}
+
+results, err := client.VectorSearchFiltered("embeddings", queryVector, 10, filter)
+```
+
+### Distance Metrics
+
+| Metric | Use Case | Range |
+|--------|----------|-------|
+| `Cosine` | Text embeddings, normalized vectors | [0, 2] (0 = identical) |
+| `Euclidean` | General purpose, image features | [0, ∞) |
+| `DotProduct` | Pre-normalized vectors, fast ranking | (-∞, ∞) |
+| `Manhattan` | High-dimensional spaces, robust to outliers | [0, ∞) |
+
+### Compression
+
+KeraDB uses LEANN-inspired delta compression:
+
+```go
+// Delta compression (stores sparse differences from neighbors)
+config.WithDeltaCompression()
+
+// Quantized delta (aggressive compression with minimal quality loss)
+config.WithQuantizedCompression()
+
+// Custom compression settings
+config.WithCompression(keradb.CompressionConfig{
+    Mode:              keradb.DeltaCompression,
+    SparsityThreshold: float32Ptr(0.001),
+    MaxDensity:        float32Ptr(0.15),
+    AnchorFrequency:   intPtr(8),
+})
+```
+
+**Storage savings**: 85-95% reduction in disk usage while maintaining search quality.
+
+### Vector API Reference
+
+#### Client Methods
+
+```go
+// Collection management
+CreateVectorCollection(name string, config *VectorConfig) error
+ListVectorCollections() ([]struct{Name string; Count int}, error)
+DropVectorCollection(name string) (bool, error)
+
+// Insert operations
+InsertVector(collection string, embedding Embedding, metadata M) (VectorID, error)
+InsertText(collection string, text string, metadata M) (VectorID, error)
+
+// Search operations
+VectorSearch(collection string, queryVector Embedding, k int) ([]VectorSearchResult, error)
+VectorSearchText(collection string, queryText string, k int) ([]VectorSearchResult, error)
+VectorSearchFiltered(collection string, queryVector Embedding, k int, filter MetadataFilter) ([]VectorSearchResult, error)
+
+// Document operations
+GetVector(collection string, id VectorID) (*VectorDocument, error)
+DeleteVector(collection string, id VectorID) (bool, error)
+
+// Statistics
+VectorStats(collection string) (*VectorCollectionStats, error)
+```
+
+#### Types
+
+```go
+type VectorID uint64
+type Embedding []float32
+
+type VectorConfig struct {
+    Dimensions      int
+    Distance        Distance
+    M               *int
+    EfConstruction  *int
+    EfSearch        *int
+    LazyEmbedding   *bool
+    EmbeddingModel  *string
+    Compression     *CompressionConfig
+}
+
+type VectorDocument struct {
+    ID        VectorID
+    Embedding *Embedding
+    Text      *string
+    Metadata  map[string]interface{}
+}
+
+type VectorSearchResult struct {
+    Document VectorDocument
+    Score    float32
+    Rank     int
+}
+
+type VectorCollectionStats struct {
+    VectorCount    int
+    Dimensions     int
+    Distance       Distance
+    MemoryUsage    int64
+    LayerCount     int
+    LazyEmbedding  bool
+    Compression    *CompressionMode
+    AnchorCount    *int
+    DeltaCount     *int
+}
+```
 
 ## Building
 
